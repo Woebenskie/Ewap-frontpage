@@ -1,0 +1,44 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Elke 5 minuten (en daarmee ook dagelijks) controleren op nieuwe commits in upstream/main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check and sync with upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/fonsvanE/Ewap-frontpage.git
+          git fetch upstream main
+
+          # Controleer of alle commits van upstream/main al in onze main zitten
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Fork is al volledig up-to-date met upstream/main."
+            exit 0
+          fi
+
+          echo "Nieuwe wijzigingen gevonden in upstream/main, synchroniseren..."
+          if ! gh repo sync "$GITHUB_REPOSITORY" -b main; then
+            echo "gh repo sync gaf een conflict; fallback naar automatische merge (-X theirs) met behoud van workflow..."
+            git merge upstream/main -X theirs --no-edit
+            git checkout HEAD -- .github/workflows/sync-upstream.yml
+            git commit --amend --no-edit || true
+            git push origin main
+          fi
